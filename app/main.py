@@ -120,13 +120,13 @@ def shift_datetime(day: date, hhmm: str) -> datetime:
         return datetime.combine(day, time(h, m), tzinfo=IST)
     except Exception:
         raise HTTPException(422, "Shift times must use valid HH:MM values")
-def shift_start_for(punch_in: datetime, shift_start: str, shift_end: str, attendance_day: date) -> datetime:
-    start = shift_datetime(attendance_day, shift_start)
-    end_clock = time(*map(int, shift_end.split(":")))
-    start_clock = time(*map(int, shift_start.split(":")))
-    if end_clock <= start_clock and punch_in.timetz().replace(tzinfo=None) < end_clock:
-        start -= timedelta(days=1)
-    return start
+def shift_start_for(
+    punch_in: datetime,
+    shift_start: str,
+    shift_end: str,
+    attendance_day: date,
+) -> datetime:
+    return shift_datetime(attendance_day, shift_start)
 def compute_late_minutes(punch_in: datetime, shift_start: str, shift_end: str, attendance_day: date) -> int:
     punch_in = as_ist(punch_in)
     start = shift_start_for(punch_in, shift_start, shift_end, attendance_day)
@@ -366,10 +366,23 @@ def correct_attendance(emp_code: str, date: str, body: AttendanceCorrectionIn):
     updates = {}
     changes = {}
     def change(field, old, new):
-        if old != new:
-            changes[field] = {"old": to_epoch_ms(as_ist(old)) if isinstance(old, datetime) else old,
-                              "new": to_epoch_ms(new) if isinstance(new, datetime) else new}
-            updates[field] = mongo_utc(new) if isinstance(new, datetime) else new
+        if isinstance(old, datetime) and isinstance(new, datetime):
+            old_value = to_epoch_ms(as_ist(old))
+            new_value = to_epoch_ms(as_ist(new))
+            changed = old_value != new_value
+        else:
+            old_value = old
+            new_value = new
+            changed = old_value != new_value
+
+        if changed:
+            changes[field] = {
+                "old": old_value,
+                "new": new_value,
+            }
+            updates[field] = (
+                mongo_utc(new) if isinstance(new, datetime) else new
+            )
     change("status", record.get("status"), status)
     change("punch_in", record.get("punch_in"), pin)
     change("punch_out", record.get("punch_out"), pout)
